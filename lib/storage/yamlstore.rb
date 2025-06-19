@@ -63,7 +63,9 @@ class YamlStore < Store
     raise
   end
 
-  # Save the world
+  # Save the entire object database to a YAML file.
+  # NOTE: This uses non-streaming YAML.dump, which may cause memory issues for large datasets.
+  # Future versions may switch to per-object streaming or a more compact format like MessagePack.
   def save
     File.open(@dbfile, 'w') do |f|
       YAML.dump(@db.values, f)
