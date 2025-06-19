@@ -22,7 +22,8 @@ require 'storage/store'
 #
 # YamlStore provides YAML-based persistent storage for game objects.
 # It deserializes data using Psych.safe_load with an explicit list of permitted classes
-# to prevent YAML deserialization vulnerabilities (e.g., code injection or DoS).
+# and disables YAML aliases to mitigate deserialization vulnerabilities such as 
+# memory exhaustion or reference abuse attacks.
 #
 # [+db+]     stores the hash of loaded game objects.
 # [+dbtop+]  tracks the highest object ID in the database.
@@ -40,12 +41,13 @@ class YamlStore < Store
     log.info "Loading world..."
     @db = {}
 
-    # Read and safely load YAML data with whitelisted classes
+    # Read and safely load YAML data with permitted classes
+    # SECURITY: aliases disabled to prevent memory exhaustion attacks
     yaml_data = File.read(@dbfile)
     objects = Psych.safe_load(
       yaml_data,
       permitted_classes: PERMITTED_CLASSES,
-      aliases: true
+      aliases: false
     )
 
     # Populate database and track highest object ID
