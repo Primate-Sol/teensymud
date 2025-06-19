@@ -10,6 +10,7 @@
 # Released under the terms of the TeensyMUD Public License
 # See LICENSE file for additional information.
 #
+
 $:.unshift "lib" if !$:.include? "lib"
 $:.unshift "vendor" if !$:.include? "vendor"
 
@@ -17,94 +18,95 @@ require 'yaml'
 require 'utility/log'
 require 'storage/store'
 
-# The YamlStore class manages access to all object storage.
+# The YamlStore class manages access to all object storage using YAML files.
 #
-# [+db+] is a handle to the database implementation (in this iteration a hash).
-# [+dbtop+] stores the highest id used in the database.
+# YamlStore provides YAML-based persistent storage for game objects.
+# It deserializes data using Psych.safe_load with an explicit list of permitted classes
+# and disables YAML aliases to mitigate deserialization vulnerabilities such as 
+# memory exhaustion or reference abuse attacks.
+#
+# [+db+]     stores the hash of loaded game objects.
+# [+dbtop+]  tracks the highest object ID in the database.
 class YamlStore < Store
   logger 'DEBUG'
+
+  # Define the list of classes allowed to be deserialized from YAML
+  PERMITTED_CLASSES = [Exit, Room, Player, Item, NPC, Command] rescue []
 
   def initialize(dbfile)
     super()
     @dbfile = "#{dbfile}.yaml"
 
-    # check if database exists and build it if not
     build_database
     log.info "Loading world..."
     @db = {}
 
-    # load the yaml database and sets @dbtop to highest object id
-    YAML::load_file(@dbfile).each do |o|
-      @dbtop = o.id if o.id > @dbtop
-      @db[o.id]=o
+    # Read and safely load YAML data with permitted classes
+    # SECURITY: aliases disabled to prevent memory exhaustion attacks
+    yaml_data = File.read(@dbfile)
+    # Load stream of YAML documents
+    objects = Psych.safe_load_stream(
+      yaml_data,
+      permitted_classes: PERMITTED_CLASSES,
+      aliases: false
+    ).to_a
+
+    # Populate database and track highest object ID
+    objects.each do |o|
+      @dbtop = o.id if o.id > (@dbtop || 0)
+      @db[o.id] = o
     end
 
     log.info "Database '#{@dbfile}' loaded...highest id = #{@dbtop}."
-#    log.debug @db.inspect
-  rescue
+  rescue => e
     log.fatal "Error loading database"
-    log.fatal $!
+    log.fatal e
     raise
   end
 
-  # Save the world
-  # [+return+] Undefined.
+  # Save the entire object database to a YAML file using streaming to limit memory use.
   def save
-    File.open(@dbfile,'w') do |f|
-      YAML::dump(@db.values,f)
+    File.open(@dbfile, 'w') do |f|
+      @db.each_value do |obj|
+        f.write("---\n")
+        f.write(YAML.dump(obj))
+      end
     end
   end
 
-  # Adds a new object to the database.
-  # [+obj+] is a reference to object to be added
-  # [+return+] Undefined.
   def put(obj)
     @db[obj.id] = obj
-    obj # return really ought not be checked
+    obj
   end
 
-  # Deletes an object from the database.
-  # [+oid+] is the id to to be deleted.
-  # [+return+] Undefined.
   def delete(oid)
     @db.delete(oid)
   end
 
-  # Finds an object in the database by its id.
-  # [+oid+] is the id to use in the search.
-  # [+return+] Handle to the object or nil.
   def get(oid)
     @db[oid]
   end
 
-  # Check if an object is in the database by its id.
-  # [+oid+] is the id to use in the search.
-  # [+return+] true or false
   def check(oid)
-    @db.has_key? oid
+    @db.has_key?(oid)
   end
 
-  # Iterate through all objects
-  # [+yield+] Each object in database to block of caller.
   def each(&blk)
-    @db.each_value &blk
+    @db.each_value(&blk)
   end
 
 private
 
-  # Checks that the database exists and builds one if not
-  # Will raise an exception if something goes wrong.
   def build_database
-    if !test(?e, @dbfile)
+    unless File.exist?(@dbfile)
       log.info "Building minimal world database..."
-      File.open(@dbfile,'w') do |f|
+      File.open(@dbfile, 'w') do |f|
         f.write(MINIMAL_DB)
       end
     end
-  rescue
+  rescue => e
     log.fatal "Unable to find or build database '#{@dbfile}'"
-    log.fatal $!
+    log.fatal e
     raise
   end
-
 end
