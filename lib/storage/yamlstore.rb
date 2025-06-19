@@ -44,15 +44,16 @@ class YamlStore < Store
     # Read and safely load YAML data with permitted classes
     # SECURITY: aliases disabled to prevent memory exhaustion attacks
     yaml_data = File.read(@dbfile)
-    objects = Psych.safe_load(
+    # Load stream of YAML documents
+    objects = Psych.safe_load_stream(
       yaml_data,
       permitted_classes: PERMITTED_CLASSES,
       aliases: false
-    )
+    ).to_a
 
     # Populate database and track highest object ID
     objects.each do |o|
-      @dbtop = o.id if o.id > @dbtop
+      @dbtop = o.id if o.id > (@dbtop || 0)
       @db[o.id] = o
     end
 
@@ -63,12 +64,13 @@ class YamlStore < Store
     raise
   end
 
-  # Save the entire object database to a YAML file.
-  # NOTE: This uses non-streaming YAML.dump, which may cause memory issues for large datasets.
-  # Future versions may switch to per-object streaming or a more compact format like MessagePack.
+  # Save the entire object database to a YAML file using streaming to limit memory use.
   def save
     File.open(@dbfile, 'w') do |f|
-      YAML.dump(@db.values, f)
+      @db.each_value do |obj|
+        f.write("---\n")
+        f.write(YAML.dump(obj))
+      end
     end
   end
 
