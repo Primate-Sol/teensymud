@@ -18,6 +18,14 @@ require 'yaml'
 require 'utility/log'
 require 'storage/store'
 
+# The YamlStore class manages access to all object storage using YAML files.
+#
+# YamlStore provides YAML-based persistent storage for game objects.
+# It deserializes data using Psych.safe_load with an explicit list of permitted classes
+# to prevent YAML deserialization vulnerabilities (e.g., code injection or DoS).
+#
+# [+db+]     stores the hash of loaded game objects.
+# [+dbtop+]  tracks the highest object ID in the database.
 class YamlStore < Store
   logger 'DEBUG'
 
